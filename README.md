@@ -1,0 +1,234 @@
+# Я впервые в этом пространсте.  По кругу мое почтение!
+
+В моем распоряжении плата Ардуино Уно про-ва RobotDyn
+
+Датчик температуры ds18b20
+
+Инкрементальный энкодер ec-11
+
+Дисплей lcd1602 
+
+Датчик подключен на pin 2
+подтянут к питанию на 4,7 кО
+
+Дисплей по шине  I2C на pin A4, A5
+Энкодер на pin 4, 5, 6 плюс питание и gnd
+Код лепил из разных источников 
+прошу найти ошибку! 
+Включаешь и все работает. 
+Потом
+уходит в режим настройки температуры 
+set-temp"
+и зависает там
+
+
+
+А во и сам код
+
+// Подключаем библиотеку для работы с шиной OneWire
+// Термометр будет подключен на Pin2
+#include <OneWire.h>
+OneWire oneWire(2);
+
+//Подключаем библиотеку для работы с термометром
+#include <DallasTemperature.h>
+
+//Создаем объект sensors, подключенный по OneWire
+DallasTemperature sensors(&oneWire);
+
+//Создаем переменные для работы с термометром
+DeviceAddress tempDeviceAddress;  //переменная для хранения адреса датчика
+float temp1 = 0; //переменная для текущего значения температуры
+int setTmp = 0; // переменная для заданного значения температуры
+
+//Подключаем LCD-дисплей
+#include <LiquidCrystal_I2C.h>
+
+// присваиваем имя lcd для дисплея 16х2
+LiquidCrystal_I2C lcd(0x27, 16, 2); 
+
+// Подключаем библиотеку для работы с ARDUINO EEPROM
+//Заданная температура будет храниться по адресу 0
+#include <EEPROM.h>
+
+//Реле подключаем к пину D11
+#define RELAY_PIN 11
+
+//Объявим переменную для хранения состояния реле
+boolean relayStatus1 = LOW;
+
+//Объявим переменные для задания задержки
+long previousMillis1 = 0;
+long interval1 = 1000; // интервал опроса датчиков температуры
+
+//Аналоговая клавиатура подключена к пину A0
+#define KEYPAD_PIN A0
+
+
+#define CLK 6
+#define DT 5
+#define SW 4
+#include "GyverEncoder.h"
+Encoder enc1(CLK, DT, SW);
+
+
+
+void setup() {
+
+  //Запускаем автоматический режим считывания энкодера
+  enc1.setTickMode(AUTO);
+
+  //Настроим пин для управления реле
+  pinMode(RELAY_PIN, OUTPUT);
+  digitalWrite(RELAY_PIN, HIGH);
+
+  //Считаем из постоянной памяти заданную температуру
+  setTmp = EEPROM_read_byte(0);
+
+  //Инициализируем термодатчик и установим разрешающую способность 12 бит
+  sensors.begin();
+  sensors.getAddress(tempDeviceAddress, 0);
+  sensors.setResolution(12);
+
+  //Выведем на дисплей стартовое сообщение на 5 секунд
+  
+  lcd.init();           // инициализация LCD дисплея
+  lcd.backlight();      // включение подсветки дисплея
+  lcd.setCursor(0, 0);
+  lcd.print("Temp. Controller");
+  lcd.setCursor(0, 1);
+  lcd.print("   TK v1.0   ");
+  delay(5000);
+
+  // выведем на дисплей заданное значение температуры на 5 секунд
+  lcd.setCursor(0, 1);
+  lcd.print("  Set temp:     ");
+  lcd.setCursor(12, 1);
+  lcd.print(setTmp);
+  delay(5000);
+
+  //Очистим дисплей
+  lcd.begin(16, 2);
+}
+
+//Определим функцию для опроса клавиатуры
+//Функция опроса клавиатуры, принимает адрес пина, к которому подключена клавиатура, и возвращает код клавиши:
+// 1 - UP
+// 2 - DOWN
+// 3 - LEFT
+// 4 - RIGHT
+// 5 - SELECT
+
+int ReadKey(int keyPin)
+{
+  int KeyNum = 0;
+  int KeyValue1 = 0;
+  int KeyValue2 = 0;
+
+
+  //Интерпретируем полученное значение и определяем код энкодера
+  if (enc1.isRight()) {
+    KeyNum = 1; //Up
+  }
+  if (enc1.isLeft()) {
+    KeyNum = 2; //Down
+  }
+  if (enc1.isLeftH()) {
+    KeyNum = 3; //Left
+  }
+  if (enc1.isRightH()) {
+    KeyNum = 4; //Right
+  }
+  if (enc1.isPress()) {
+    KeyNum = 5; //Select
+  }
+
+  //Возвращаем код нажатой клавиши
+  return KeyNum;
+}
+
+//Определим процедуру редактирования заданной температуры
+//Вызывается по нажатию клавиши Select, отображает на дисплее заданную температуру и позволяет изменять ее клавишами Up и Down
+
+void setTemperature() {
+
+  int keyCode = 0;
+
+  //выводим на дисплей заданное значение температуры
+  lcd.begin(16, 2);
+  lcd.setCursor(0, 0);
+  lcd.print("    Set temp  ");
+  lcd.setCursor(7, 1);
+  lcd.print(setTmp);
+
+  //Опрашиваем клавиатуру, если нажата клавиша Up увеличиваем значение на 1, если Down – уменьшаем на 1
+  //Если нажаты клавиши Select или Right – цикл опроса прерывается
+  //Задержки введены для борьбы с дребезгом, если клавиши срабатывают четко – можно уменьшить время задержек или вообще их убрать
+  do {
+    keyCode = ReadKey(KEYPAD_PIN);
+    if (keyCode == 1) {
+      setTmp++;
+      delay(150);
+      lcd.setCursor(7, 1);
+      lcd.print(setTmp);
+    }
+    if (keyCode == 2) {
+      setTmp--;
+      delay(150);
+      lcd.setCursor(7, 1);
+      lcd.print(setTmp);
+    }
+  } while (keyCode != 5 && keyCode != 4);
+  delay(200);
+
+  //По клавише Select – созраняем в EEPROM измененное значение
+  //По клавише Right – восстанавливаем старое значение
+  if (keyCode == 5) {
+    EEPROM_write_byte(0, setTmp);
+  }
+  if (keyCode == 4) {
+    setTmp = EEPROM_read_byte(0);
+  }
+}
+
+void loop() {
+
+  //Модуль опроса датчиков и получения сведений о температуре
+  //Вызывается 1 раз в секунду
+  unsigned long currentMillis1 = millis();
+  if (currentMillis1 - previousMillis1 > interval1) {
+    previousMillis1 = currentMillis1;
+
+    //Запуск процедуры измерения температуры
+    sensors.setWaitForConversion(false);
+    sensors.requestTemperatures();
+    sensors.setWaitForConversion(true);
+
+    //Считывание значения температуры
+    sensors.getAddress(tempDeviceAddress, 0);
+    temp1 = sensors.getTempC(tempDeviceAddress);
+
+    // Вывод текущего значения температуры на дисплей
+    lcd.setCursor(0, 0);
+    lcd.print("  Current Temp  ");
+    lcd.setCursor(5, 1);
+    lcd.print(temp1);
+  }
+
+  //Условие включения/выключения нагревателя
+  if (temp1 < setTmp && relayStatus1 == LOW) {
+    relayStatus1 = HIGH;
+    digitalWrite(RELAY_PIN, LOW);
+  }
+  
+  //Здесь реализуем гистерезис +1 градус к уставке
+  if (temp1 > setTmp+1 && relayStatus1 == HIGH) {
+    relayStatus1 = LOW;
+    digitalWrite(RELAY_PIN, HIGH);
+  }
+
+  // Опрос... если нажата кнопка 
+  if (enc1.isPress())  {
+    setTemperature(); //Переход к редактированию заданной температуры
+  }
+}
